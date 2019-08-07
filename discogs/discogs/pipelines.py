@@ -5,30 +5,10 @@
 # Don't forget to add your pipeline to the ITEM_PIPELINES setting
 # See: https://doc.scrapy.org/en/latest/topics/item-pipeline.html
 from scrapy.exceptions import NotConfigured, DropItem
-from scrapy.exporters import CsvItemExporter
 import mysql
 from mysql.connector import connection
 
-class CsvPipeline(object):
-    def __init__(self):
-        self.file = open("discogs.csv", 'wb')
-        self.exporter = CsvItemExporter(self.file, encoding='utf-8',)
-        self.exporter.start_exporting()
-
-    # def create_valid_csv(self, item):
-    #     for key, value in item.items():
-    #         is_string = (isinstance(value, basestring))
-    #         if (is_string and ("," in value.encode('utf-8'))):
-    #             item[key] = "\"" + value + "\""
-
-    def close_spider(self, spider):
-        self.exporter.finish_exporting()
-        self.file.close()
-
-    # def process_item(self, item, spider):
-    #     self.exporter.export_item(item)
-    #     return item
-
+from .items import DiscogsAuthorItems, DiscogsAlbumItems, DiscogsSongItems
 
 class DiscogsPipeline(object):
     def __init__(self, database, user, password, host, auth_plugin):
@@ -106,9 +86,9 @@ class DiscogsPipeline(object):
         # Album and Country Join Table
         self.cursor.execute("""DROP TABLE IF EXISTS album_country""")
         self.cursor.execute('CREATE TABLE IF NOT EXISTS album_country ('
-                       'AlbumId INT,'
+                       'AlbumId NVARCHAR(200),'
                        'CountryId INT,'
-                       'PRIMARY KEY (AlbumId, CountryId)'
+                       'PRIMARY KEY (CountryId)'
                        ');')
         self.cursor = self.refresh_cursor(self.cursor, self.conn)
 
@@ -116,7 +96,7 @@ class DiscogsPipeline(object):
         self.cursor.execute("""DROP TABLE IF EXISTS album_version""")
         self.cursor.execute('CREATE TABLE IF NOT EXISTS album_version ('
                        'VersionId INT AUTO_INCREMENT,'
-                       'AlbumId INT,'
+                       'AlbumId NVARCHAR(200),'
                        'VersionFormat NVARCHAR(50),'
                        'PRIMARY KEY(VersionId)'
                        ');')
@@ -134,9 +114,9 @@ class DiscogsPipeline(object):
         # Album and Music Genre Join Table
         self.cursor.execute("""DROP TABLE IF EXISTS album_genre""")
         self.cursor.execute('CREATE TABLE IF NOT EXISTS album_genre ('
-                       'AlbumId INT,'
+                       'AlbumId NVARCHAR(200),'
                        'GenreId INT,'
-                       'PRIMARY KEY (AlbumId, GenreId)'
+                       'PRIMARY KEY (GenreId)'
                        ');')
         self.cursor = self.refresh_cursor(self.cursor, self.conn)
 
@@ -152,9 +132,9 @@ class DiscogsPipeline(object):
         # Album and Music Style Join Table
         self.cursor.execute("""DROP TABLE IF EXISTS album_style""")
         self.cursor.execute('CREATE TABLE IF NOT EXISTS album_style ('
-                       'AlbumId INT,'
+                       'AlbumId NVARCHAR(200),'
                        'StyleId INT,'
-                       'PRIMARY KEY (AlbumId, StyleId)'
+                       'PRIMARY KEY (StyleId)'
                        ');')
         self.cursor = self.refresh_cursor(self.cursor, self.conn)
 
@@ -172,60 +152,105 @@ class DiscogsPipeline(object):
                        ');')
         self.cursor = self.refresh_cursor(self.cursor, self.conn)
 
+    # Process all items to database
+    def process_item(self, item, spider):
+        if isinstance(item, DiscogsAuthorItems):
+            self.store_author_to_db(item, spider)
+        if isinstance(item, DiscogsAlbumItems):
+            self.store_album_to_db(item, spider)
+        if isinstance(item, DiscogsSongItems):
+            self.store_song_to_db(item, spider)
+
      # Insert all into author table
-    def store_author_to_db(self, item):
+    def store_author_to_db(self, item, spider):
         try:
             self.cursor = self.refresh_cursor(self.cursor, self.conn)
-            self.cursor.execute(""" INSERT INTO author (AuthorName, AuthorSites, AuthorVocals, AuthorCredits) VALUES (%s, %s, %s, %s) """, (
-                item.get("authorName"),
-                item.get("authorSites"),
-                item.get("authorVocals"),
-                item.get("authorCredits"),
+            self.cursor.execute("INSERT INTO author (AuthorName, AuthorSites, AuthorVocals, AuthorCredits) VALUES (%s, %s, %s, %s) ", (
+                str(item.get("authorName")),
+                str(item.get("authorSites")),
+                str(item.get("authorVocals")),
+                str(item.get("authorCredits")),
                 ))
         except mysql.connector.Error as err:
             print(err)
         self.conn.commit()
 
     # Insert album detail to db
-    def store_album_to_db(self, item):
-        # try:
-        #     # Album Genre
-        #     self.cursor = self.refresh_cursor(self.cursor, self.conn)
-        #     self.cursor.execute('INSERT INTO genre (GenreName)'
-        #                         ' VALUES (\'' + str(item.get('albumGenre')) + '\')')
-        #                         #' VALUES (\'' + str(item.get('albumGenre')) + '\')')
-        #     # Album Style
-        #     self.cursor = self.refresh_cursor(self.cursor, self.conn)
-        #     self.cursor.execute('INSERT INTO style (StyleName)'
-        #                         ' VALUES (\'' + str(item.get('albumStyle')) + '\')')
-        #     # Album Style
-        #     self.cursor = self.refresh_cursor(self.cursor, self.conn)
-        #     self.cursor.execute('INSERT INTO country (CountryName)'
-        #                         ' VALUES (\'' + str(item.get('albumCountry')) + '\')')
-        # except mysql.connector.Error as err:
-        #     print(err)
-        # Album Detail
+    def store_album_to_db(self, item, spider):
+        # Country Unique List
+        countries = []
+        for country in item['albumCountry']:
+            if country not in countries:
+                countries.append(country)
         try:
-            query = "INSERT INTO Album (albumId, AuthorId) VALUES ('" + str(item.get("albumId"))  + "',(SELECT AuthorId FROM author WHERE AuthorName ='" + str(item.get("albumAuthor")) + "'))"
+            # Album Country
+            for country in countries:
+                self.cursor = self.refresh_cursor(self.cursor, self.conn)
+                self.cursor.execute('INSERT INTO country (CountryName)'
+                                    ' VALUES (\'' + str(country) + '\')')
+            # Album Genre
+            for genreName in item.get('albumGenre'):
+                self.cursor = self.refresh_cursor(self.cursor, self.conn)
+                self.cursor.execute('INSERT INTO genre (GenreName)'
+                                    ' VALUES (\'' + str(genreName) + '\')')
+            # Album Style
+            for styleName in item.get('albumStyle'):
+                self.cursor = self.refresh_cursor(self.cursor, self.conn)
+                self.cursor.execute('INSERT INTO style (StyleName)'
+                                    ' VALUES (\'' + str(styleName) + '\')')
+            # Album Format
             self.cursor = self.refresh_cursor(self.cursor, self.conn)
-            self.cursor.execute(query)
-        except mysql.connector.Error as err:
-            print(err)
-        # Song Detail
-        try:
+            for formatName in item.get('albumFormat'):
+                self.cursor.execute("INSERT INTO album_version (AlbumId, VersionFormat) VALUES (%s, %s)", (
+                    str(item.get("albumId")),
+                    str(formatName)
+                ))
+            # Song Detail
             self.cursor = self.refresh_cursor(self.cursor, self.conn)
-            self.cursor.execute("INSERT INTO song (AlbumId, Songs, SongsDurations) VALUES (%s, %s, %s)", (
-                    item.get("albumId"),
-                    item.get("albumSongs"),
-                    item.get("albumSongsDuration")
+            for i, songs in enumerate(item.get("albumSongs")):
+                songsDuration = int(item['albumSongsDuration'][i].split(':')[0]) * 60 + int(item['albumSongsDuration'][i].split(':')[1])
+                self.cursor.execute("INSERT INTO song (AlbumId, Songs, SongsDurations) VALUES (%s, %s, %s)", (
+                    str(item.get("albumId")),
+                    str(songs),
+                    str(songsDuration)
                 ))
         except mysql.connector.Error as err:
             print(err)
         self.conn.commit()
 
+        # Album Detail
+        try:
+            query = "INSERT INTO Album (albumId, AlbumName, AlbumYear, AlbumVersions, AuthorId) VALUES ('" + str(item.get("albumId"))  + "','" + str(item.get("albumName"))  + "','" + str(item.get("albumYear")) + "','" + str(len(item.get("albumFormat"))) + "',(SELECT AuthorId FROM author WHERE AuthorName ='" + str(item.get("albumAuthor")) + "'))"
+            self.cursor = self.refresh_cursor(self.cursor, self.conn)
+            self.cursor.execute(query)
+        except mysql.connector.Error as err:
+            print(err)
+        self.conn.commit()
+
+        # try:
+        #     # album_country table
+        #     for country in countries:
+        #         self.cursor = self.refresh_cursor(self.cursor, self.conn)
+        #         query = "INSERT INTO album_country (AlbumId, CountryId) VALUES ('" + str(item.get("albumId")) + "',(SELECT CountryId FROM country WHERE CountryName = '" + str(country) + "'))"
+        #         self.cursor.execute(query)
+        #     # album_style table
+        #     for style in item.get('albumStyle'):
+        #         self.cursor = self.refresh_cursor(self.cursor, self.conn)
+        #         self.cursor.execute('INSERT INTO album_style (AlbumId, StyleId) VALUES (' + str(item.get("albumId")) + ','
+        #                             '(SELECT StyleId FROM style WHERE StyleName = \'' + str(style) + '\'))')
+        #     # album_genre table
+        #     for genre in item.get('albumGenre'):
+        #         self.cursor = self.refresh_cursor(self.cursor, self.conn)
+        #         self.cursor.execute('INSERT INTO album_genre (AlbumId, GenreId) VALUES (' + str(item.get("albumId")) + ','
+        #                             '(SELECT GenreId FROM genre WHERE GenreName = \'' + str(genre) + '\'))')
+        #
+        # except mysql.connector.Error as err:
+        #     print(err)
+        #self.conn.commit()
+
     # Insert song detail to db
-    def store_song_to_db(self, item):
-        # Songs Detail
+    def store_song_to_db(self, item, spider):
+        # Songs Detail update
         query = "UPDATE song SET ArrangedBy = '" + str(item.get("songArranged")) + "', MusicBy = '" + str(item.get("songMusic"),) + "', LyricBy = '" + str(item.get("songLyric")) + "' WHERE Songs = '" + str(item.get("songName")) + "'"
         try:
             self.cursor = self.refresh_cursor(self.cursor, self.conn)
@@ -233,17 +258,6 @@ class DiscogsPipeline(object):
         except mysql.connector.Error as err:
             print(err)
         self.conn.commit()
-
-    # Process all items to database
-    def process_item(self, item, spider):
-        self.store_author_to_db(item)
-        self.store_album_to_db(item)
-        self.store_song_to_db(item)
-        # if 'albumGenre' not in item:
-        #     print('-' * 60)
-        #     print('"albumGenre has not been given a value"')
-        #     print('-' * 60)
-        return item
 
     # Close connection after finish
     def close_spider(self, spider):
