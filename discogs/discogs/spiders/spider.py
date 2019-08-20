@@ -34,7 +34,7 @@ class DiscogsSpider(scrapy.Spider):
         #     next_page = response.urljoin(next_page)
         #     yield scrapy.Request(url=next_page, callback=self.parse)
         # if next_page is not None:
-        #     return response.follow(next_page, self.parse, priority = 4)
+        #     return response.follow(next_page, self.parse)
 
     # Get data from Author links
     def author_links(self, response):
@@ -62,20 +62,6 @@ class DiscogsSpider(scrapy.Spider):
         albumItems.add_css('albumSongs', 'td span.tracklist_track_title::text')
         albumItems.add_xpath('albumSongsDuration', '//td[@class="tracklist_track_duration"]/span[1]/text()')
         yield albumItems.load_item()
-
-        # for singleAlbum in singleAlbums:
-        #     albumItems = DiscogsAlbumItems()
-        #     albumItems['albumId'] = singleAlbum.xpath('//span[@class="copy_shortcut_code"]/text()').get() #.replace('\]', '')
-        #     albumItems['albumAuthor'] = singleAlbum.xpath('//h1[@id="profile_title"]/span[1]/span/@title').get()
-        #     albumItems['albumName'] = singleAlbum.xpath('normalize-space(//h1[@id="profile_title"]/span[2]/text())').get()
-        #     albumItems['albumGenre'] = singleAlbum.xpath('//div[@class="profile"]/div[text()="Genre:"]/following-sibling::div/a/text()').get()
-        #     albumItems['albumStyle'] = singleAlbum.xpath('//div[@class="profile"]/div[text()="Style:"]/following-sibling::div/a/text()').get()
-        #     albumItems['albumYear'] = singleAlbum.css('.card .year.has_header::text').get()
-        #     albumItems['albumFormat'] = singleAlbum.css('.format::text').extract()
-        #     albumItems['albumCountry'] = singleAlbum.css('.card .country.has_header span::text').get()
-        #     albumItems['albumSongs'] = singleAlbum.css('td span.tracklist_track_title::text').extract()
-        #     albumItems['albumSongsDuration'] = singleAlbum.xpath('//td[@class="tracklist_track_duration"]/span[1]/text()').extract()
-        #     yield albumItems
 
         # Get all Songs links from albums
         songLinks = singleAlbums.css("td.tracklist_track_title a").xpath("@href").extract()
