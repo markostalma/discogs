@@ -32,7 +32,6 @@ class DiscogsPipeline(object):
         auth_plugin = db_settings['auth_plugin']
         return cls(database, user, password, host, auth_plugin)
 
-
     # Close cursor and return new connection
     def refresh_cursor(self, cursor, conn):
         self.cursor.close()
